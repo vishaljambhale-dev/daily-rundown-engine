@@ -46,10 +46,41 @@ with tab1:
                     st.markdown(f"- [Search: {q[:60]}...]({search_url})", unsafe_allow_html=True)
 
 # === TAB 2: CLOUD-READY DOWNLOAD BUTTONS ===
+# === TAB 2: CLOUD-READY DOWNLOAD BUTTONS ===
 with tab2:
     st.header("Step 2: Paste Links & Export")
-    # ... [Keep the paste and edit dashboard logic the same] ...
+    
+    raw_urls = st.text_area("Paste TabCopy URLs here (one per line):", height=150)
+    
+    if st.button("Process URLs", type="primary"):
+        if not raw_urls.strip():
+            st.warning("Please paste some URLs first.")
+        else:
+            urls = [u.strip() for u in raw_urls.split("\n") if u.strip()]
+            with st.spinner(f"Processing {len(urls)} URLs (Extracting, Shortening, Categorizing)..."):
+                processed = [extract_and_categorize(u) for u in urls]
+                st.session_state.processed_items = processed
+                
+    if "processed_items" in st.session_state and st.session_state.processed_items:
+        st.write("### Review, Edit & Categorize Dashboard")
         
+        final_items = []
+        # Create an interactive row for each item
+        for i, item in enumerate(st.session_state.processed_items):
+            col1, col2, col3 = st.columns([1, 5, 3])
+            keep = col1.checkbox("Keep", value=True, key=f"keep_{i}")
+            headline = col2.text_input("Headline", value=item["headline"], key=f"head_{i}")
+            category = col3.selectbox("Category", options=CATEGORIES, index=CATEGORIES.index(item["cat"]), key=f"cat_{i}")
+            
+            if keep:
+                final_items.append({
+                    "headline": headline,
+                    "category": category,
+                    "tiny_url": item["tiny"],
+                    "full_url": item["url"]
+                })
+                
+        # st.divider() is now perfectly aligned with the 'for' loop above it
         st.divider()
         st.write("### Download Final Files")
         
