@@ -27,7 +27,16 @@ tab1, tab2 = st.tabs(["Phase 1: Fetch & Search", "Phase 2: Process & Export"])
 # === TAB 1: CLOUD-READY TAB LAUNCHER ===
 with tab1:
     st.header("Step 1: Fetch Telegram Posts")
-    # ... [Keep the fetch button logic the same] ...
+    
+    # The actual button code that was missing!
+    if st.button("Fetch Today's Posts", type="primary"):
+        with st.spinner("Connecting to Telegram..."):
+            try:
+                posts = asyncio.run(fetch_telegram_posts())
+                st.session_state.posts = posts
+                st.success(f"Found {len(posts)} posts!")
+            except Exception as e:
+                st.error(f"Error fetching posts: {e}")
                 
     if "posts" in st.session_state and st.session_state.posts:
         st.write("### Select relevant posts:")
@@ -44,8 +53,8 @@ with tab1:
                 for q in selected_queries:
                     search_url = f"https://www.google.com/search?q={urllib.parse.quote(q[:120])}"
                     st.markdown(f"- [Search: {q[:60]}...]({search_url})", unsafe_allow_html=True)
+                    
 
-# === TAB 2: CLOUD-READY DOWNLOAD BUTTONS ===
 # === TAB 2: CLOUD-READY DOWNLOAD BUTTONS ===
 with tab2:
     st.header("Step 2: Paste Links & Export")
