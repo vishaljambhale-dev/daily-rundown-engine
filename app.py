@@ -53,11 +53,17 @@ shortener = pyshorteners.Shortener()
 CATEGORIES = ["Economy & Current Affairs", "International", "Company & Industry Specific", "Quarterly Results"]
 
 # --- HELPER FUNCTIONS ---
+from telethon.sessions import StringSession
+
 async def fetch_telegram_posts():
-    client = TelegramClient("cloud_session", API_ID, API_HASH)
+    # Uses the StringSession stored in Streamlit Secrets
+    session_str = st.secrets["TELEGRAM_STRING_SESSION"]
+    client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+    
     await client.start()
     
     today = datetime.datetime.now(datetime.timezone.utc).date()
+    # Filters posts between 12:00 PM IST (06:30 UTC) and 10:00 PM IST (16:30 UTC)
     start_time = datetime.datetime.combine(today, datetime.time(6, 30), tzinfo=datetime.timezone.utc)
     end_time = datetime.datetime.combine(today, datetime.time(16, 30), tzinfo=datetime.timezone.utc)
     
