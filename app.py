@@ -30,12 +30,8 @@ st.markdown("""
     }
     
     /* Fix Checkbox and Toggle Alignment in Table Row */
-    div[data-testid="stCheckbox"] {
-        padding-top: 8px;
-    }
-    div[data-testid="stToggle"] {
-        padding-top: 4px;
-    }
+    div[data-testid="stCheckbox"] { padding-top: 8px; }
+    div[data-testid="stToggle"] { padding-top: 4px; }
     
     /* Style Table Headers */
     .table-header {
@@ -52,8 +48,16 @@ st.markdown("""
     /* Clean text display for successful fetches */
     .success-text {
         padding-top: 8px;
+        margin-bottom: 4px;
         font-size: 14px;
         color: #e0e0e0;
+    }
+    
+    /* SMART RED BORDERS FOR ERRORS */
+    /* Targets any input placeholder containing 'Fix Error' */
+    input[placeholder*="Fix Error"] {
+        border: 1px solid #ef4444 !important;
+        box-shadow: 0 0 0 1px #ef4444 !important;
     }
     
     /* Subtly elevate the export section */
@@ -81,7 +85,6 @@ CATEGORIES = [
     "QUARTERLY RESULTS"
 ]
 
-# --- COLAB SCRAPER CONFIGURATION ---
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept-Language': 'en-US,en;q=0.9',
@@ -92,10 +95,10 @@ blocked_flags = [
     "bloomberg", "reuters.com", "reuters", "are you a robot",
     "attention required", "403 forbidden", "access denied",
     "just a moment", "cloudflare", "the new york times",
-    "nytimes", "subscribe to read", "log in",
-    "please check", "enable javascript", "security check",
-    "unusual activity", "browser settings", "verify you are human",
-    "page not found", "404 not found", "error 404"
+    "nytimes", "subscribe to read", "log in", "please check", 
+    "enable javascript", "security check", "unusual activity", 
+    "browser settings", "verify you are human", "page not found", 
+    "404 not found", "error 404"
 ]
 
 suffixes_to_remove = [
@@ -117,7 +120,6 @@ async def fetch_telegram_posts(start_time, end_time):
     client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
     
     await client.start()
-    
     posts = []
     async for m in client.iter_messages(CHANNEL, limit=250):
         if m.date and start_time <= m.date <= end_time and m.text and len(m.text.strip()) > 10:
@@ -125,7 +127,6 @@ async def fetch_telegram_posts(start_time, end_time):
                 "text": m.text.replace("\n", " ").strip(),
                 "date": m.date.astimezone(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
             })
-            
     await client.disconnect()
     return posts
 
@@ -160,7 +161,6 @@ def extract_and_categorize(url):
                     parts = headline.rsplit(delim, 1)
                     tail_text = parts[1].strip()
                     tail_lower = tail_text.lower()
-
                     is_garbage = (len(tail_text.split()) <= 3) or any(brand in tail_lower for brand in garbage_brands)
                     if is_garbage:
                         headline = parts[0].strip()
@@ -176,7 +176,6 @@ def extract_and_categorize(url):
         
         if is_blocked:
             headline = "[ACTION REQUIRED] Manual Headline Needed"
-
     except Exception:
         headline = "[ACTION REQUIRED] Manual Headline Needed"
 
@@ -209,8 +208,11 @@ def extract_and_categorize(url):
             
     return {"url": url, "tiny": tinyurl, "headline": headline, "cat": cat}
 
+# CALLBACK: Hard-saves user edits so they never reset
+def update_field(index, field, widget_key):
+    st.session_state.processed_items[index][field] = st.session_state[widget_key]
+
 # --- SIDEBAR NAVIGATION ---
-# Custom branded title for the sidebar
 st.sidebar.markdown("""
     <div style="margin-bottom: 25px; padding-top: 10px;">
         <h1 style="font-size: 1.9rem; font-weight: 800; margin: 0; color: #e0e0e0; line-height: 1.2;">
@@ -220,12 +222,7 @@ st.sidebar.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-app_mode = st.sidebar.radio(
-    "Navigation",
-    ["Step 1: Fetch Posts", "Step 2: Process Data"],
-    label_visibility="collapsed"
-)
-
+app_mode = st.sidebar.radio("Navigation", ["Step 1: Fetch Posts", "Step 2: Process Data"], label_visibility="collapsed")
 st.sidebar.divider()
 st.sidebar.subheader("Actions")
 
@@ -240,48 +237,34 @@ elif app_mode == "Step 2: Process Data":
 if app_mode == "Step 1: Fetch Posts":
     st.header("Step 1: Fetch Telegram Posts")
     st.write("Extract recent updates from the designated source channel.")
-    
     st.subheader("Fetch Parameters")
     
-    fetch_type = st.radio(
-        "Select Fetch Duration", 
-        ["One Day", "Multi Day"], 
-        horizontal=True,
-        label_visibility="collapsed"
-    )
-    
+    fetch_type = st.radio("Select Fetch Duration", ["One Day", "Multi Day"], horizontal=True, label_visibility="collapsed")
     now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
     today_date = now_ist.date()
-    
     st.write("")
     
     if fetch_type == "One Day":
         col_date, _ = st.columns([1, 1])
         selected_date = col_date.date_input("Select Date", value=today_date)
-        
         col_st, col_et = st.columns(2)
         start_t = col_st.time_input("Start Time (IST)", value=datetime.time(12, 0))
         end_t = col_et.time_input("End Time (IST)", value=datetime.time(22, 0))
-        
         start_dt_ist = datetime.datetime.combine(selected_date, start_t)
         end_dt_ist = datetime.datetime.combine(selected_date, end_t)
-        
     else:
         col_sd, col_ed = st.columns(2)
         start_d = col_sd.date_input("Start Date", value=today_date - datetime.timedelta(days=2))
         end_d = col_ed.date_input("End Date", value=today_date)
-        
         col_st, col_et = st.columns(2)
         start_t = col_st.time_input("Start Time on Start Date (IST)", value=datetime.time(22, 0))
         end_t = col_et.time_input("End Time on End Date (IST)", value=datetime.time(12, 0))
-        
         start_dt_ist = datetime.datetime.combine(start_d, start_t)
         end_dt_ist = datetime.datetime.combine(end_d, end_t)
 
     ist_offset = datetime.timedelta(hours=5, minutes=30)
     start_time_utc = start_dt_ist.replace(tzinfo=datetime.timezone.utc) - ist_offset
     end_time_utc = end_dt_ist.replace(tzinfo=datetime.timezone.utc) - ist_offset
-
     st.divider()
 
     if fetch_clicked:
@@ -298,14 +281,11 @@ if app_mode == "Step 1: Fetch Posts":
                 
     if "posts" in st.session_state and st.session_state.posts:
         st.write("### Select relevant posts to generate search queries:")
-        
         selected_queries = []
         for i, post_obj in enumerate(st.session_state.posts):
             post_text = post_obj["text"]
             formatted_time = post_obj["date"].strftime("%b %d, %I:%M %p")
-            
-            label = f"**[{formatted_time}]** {post_text}"
-            if st.checkbox(label, key=f"post_{i}"):
+            if st.checkbox(f"**[{formatted_time}]** {post_text}", key=f"post_{i}"):
                 selected_queries.append(post_text)
                 
         if st.button("Generate Search Links", type="primary"):
@@ -315,11 +295,8 @@ if app_mode == "Step 1: Fetch Posts":
                 st.divider()
                 st.write("### Batch Search URLs for Chrome Extension")
                 st.write("Hover over the box below, click the **Copy icon** in the top right corner, paste into your **Open Multiple URLs** extension, and hit **Open URLs**:")
-                
                 search_urls = [f"https://www.google.com/search?q={urllib.parse.quote(q[:120])}" for q in selected_queries]
-                urls_formatted = "\n".join(search_urls)
-                
-                st.code(urls_formatted, language="text")
+                st.code("\n".join(search_urls), language="text")
 
 # --- MAIN AREA: STEP 2 ---
 elif app_mode == "Step 2: Process Data":
@@ -336,7 +313,7 @@ elif app_mode == "Step 2: Process Data":
             with st.spinner(f"Processing {len(urls)} URLs concurrently..."):
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                     processed = list(executor.map(extract_and_categorize, urls))
-                
+                # Save scraped data to master list
                 st.session_state.processed_items = processed
                 
     if "processed_items" in st.session_state and st.session_state.processed_items:
@@ -344,63 +321,57 @@ elif app_mode == "Step 2: Process Data":
         st.subheader("Review & Edit Dashboard")
         st.write("Ensure all headlines are formatted correctly and categories align with your newsletter layout.")
         
-        # Table Headers with Edit Column
-        h_col1, h_col_edit, h_col2, h_col3, h_col4 = st.columns([0.7, 0.7, 4.3, 2.5, 3.5])
+        # 4-Column Consolidated Layout
+        h_col1, h_col2, h_col3, h_col4 = st.columns([0.7, 0.7, 7.6, 3])
         h_col1.markdown("<div class='table-header'>Keep</div>", unsafe_allow_html=True)
-        h_col_edit.markdown("<div class='table-header'>Edit</div>", unsafe_allow_html=True)
-        h_col2.markdown("<div class='table-header'>Extracted Headline</div>", unsafe_allow_html=True)
-        h_col3.markdown("<div class='table-header'>Shortlink</div>", unsafe_allow_html=True)
+        h_col2.markdown("<div class='table-header'>Edit</div>", unsafe_allow_html=True)
+        h_col3.markdown("<div class='table-header'>Extracted News & Links</div>", unsafe_allow_html=True)
         h_col4.markdown("<div class='table-header'>AI Assigned Category</div>", unsafe_allow_html=True)
         
         final_items = []
         
-        # Interactive Table Rows
+        # Build Interactive Table Rows
         for i, item in enumerate(st.session_state.processed_items):
-            col1, col_edit, col2, col3, col4 = st.columns([0.7, 0.7, 4.3, 2.5, 3.5])
+            col1, col2, col3, col4 = st.columns([0.7, 0.7, 7.6, 3])
             
+            # Keep Checkbox
             keep = col1.checkbox("Keep", value=True, key=f"keep_{i}", label_visibility="collapsed")
-            edit_mode = col_edit.toggle("Edit", key=f"edit_toggle_{i}", label_visibility="collapsed")
             
-            current_head = st.session_state.get(f"head_{i}", item["headline"])
-            current_tiny = st.session_state.get(f"tiny_{i}", item["tiny"])
+            # Edit Toggle
+            edit_mode = col2.toggle("Edit", key=f"edit_toggle_{i}", label_visibility="collapsed")
             
-            # --- CONDITIONAL HEADLINE LOGIC ---
-            if "[ACTION REQUIRED]" in current_head or edit_mode:
-                if "[ACTION REQUIRED]" in current_head:
-                    col2.markdown("<span style='color: #ef4444; font-size: 13px; font-weight: 600;'>Manual Headline Needed</span>", unsafe_allow_html=True)
-                    val = ""
-                else:
-                    val = current_head
+            # Evaluate Error States directly from the master list
+            needs_head_fix = "[ACTION REQUIRED]" in item["headline"]
+            needs_tiny_fix = "[ACTION REQUIRED]" in item["tiny"]
+            
+            with col3:
+                # If there is an error, OR the user has toggled Edit Mode ON
+                if needs_head_fix or needs_tiny_fix or edit_mode:
+                    st.caption(f"Source: [{item['url'][:80]}...]({item['url']})")
                     
-                headline = col2.text_input("Paste Headline", value=val, key=f"head_{i}", label_visibility="collapsed", placeholder="Paste correct headline here...")
-            else:
-                col2.markdown(f"<div class='success-text'><b>{current_head}</b></div>", unsafe_allow_html=True)
-                headline = current_head
-            
-            col2.caption(f"Source: [{item['url'][:65]}...]({item['url']})")
-            
-            # --- CONDITIONAL TINYURL LOGIC ---
-            if "[ACTION REQUIRED]" in current_tiny or edit_mode:
-                if "[ACTION REQUIRED]" in current_tiny:
-                    col3.markdown("<span style='color: #ef4444; font-size: 13px; font-weight: 600;'>Manual Link Needed</span>", unsafe_allow_html=True)
-                    val = ""
-                else:
-                    val = current_tiny
+                    sub1, sub2 = st.columns(2)
                     
-                tiny = col3.text_input("Paste Shortlink", value=val, key=f"tiny_{i}", label_visibility="collapsed", placeholder="Paste TinyURL here...")
-            else:
-                col3.markdown(f"<div class='success-text'><a href='{current_tiny}' target='_blank' style='color: #06b6d4;'>{current_tiny}</a></div>", unsafe_allow_html=True)
-                tiny = current_tiny
+                    # Headline Input (Triggers red border CSS via placeholder if it contains an error)
+                    ph_head = "Fix Error: Paste Headline..." if needs_head_fix else "Edit Headline..."
+                    head_val = item["headline"] if not needs_head_fix else ""
+                    sub1.text_input("Headline", value=head_val, key=f"head_{i}", placeholder=ph_head, label_visibility="collapsed", on_change=update_field, args=(i, "headline", f"head_{i}"))
+                    
+                    # Shortlink Input (Triggers red border CSS via placeholder if it contains an error)
+                    ph_tiny = "Fix Error: Paste TinyURL..." if needs_tiny_fix else "Edit TinyURL..."
+                    tiny_val = item["tiny"] if not needs_tiny_fix else ""
+                    sub2.text_input("Shortlink", value=tiny_val, key=f"tiny_{i}", placeholder=ph_tiny, label_visibility="collapsed", on_change=update_field, args=(i, "tiny", f"tiny_{i}"))
                 
-            category = col4.selectbox("Category", options=CATEGORIES, index=CATEGORIES.index(item["cat"]), key=f"cat_{i}", label_visibility="collapsed")
+                # If fetch was fully successful and edit mode is OFF
+                else:
+                    st.markdown(f"<div class='success-text'><b>{item['headline']}</b></div>", unsafe_allow_html=True)
+                    st.caption(f"Source: [{item['url'][:55]}...]({item['url']}) &nbsp;|&nbsp; Shortlink: [{item['tiny']}]({item['tiny']})")
+                    
+            with col4:
+                st.selectbox("Category", options=CATEGORIES, index=CATEGORIES.index(item["cat"]), key=f"cat_{i}", label_visibility="collapsed", on_change=update_field, args=(i, "cat", f"cat_{i}"))
             
+            # Build final list using the dynamically updated master list items
             if keep:
-                final_items.append({
-                    "headline": headline,
-                    "category": category,
-                    "tiny_url": tiny,
-                    "full_url": item["url"]
-                })
+                final_items.append(item)
                 
         st.write("")
         
@@ -415,13 +386,13 @@ elif app_mode == "Step 2: Process Data":
             f1_content = f"Daily Rundown: {date_str}\n\n"
             f2_content = f"Daily Rundown: {date_str}\n\n"
             
-            active_categories = [cat for cat in CATEGORIES if any(x["category"] == cat for x in final_items)]
+            active_categories = [cat for cat in CATEGORIES if any(x["cat"] == cat for x in final_items)]
             
             for idx, c in enumerate(active_categories):
-                group = [x for x in final_items if x["category"] == c]
+                group = [x for x in final_items if x["cat"] == c]
                 if group:
-                    f1_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny_url']}\n" for x in group])
-                    f2_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny_url']}\n{x['full_url']}\n" for x in group])
+                    f1_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny']}\n" for x in group])
+                    f2_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny']}\n{x['url']}\n" for x in group])
                     
                     if idx < len(active_categories) - 1:
                         f1_content += "\n"
