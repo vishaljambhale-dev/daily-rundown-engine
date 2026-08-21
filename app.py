@@ -14,7 +14,7 @@ import time
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Daily Rundown Engine", layout="wide")
 
-# --- CUSTOM CSS FOR MODERN UI ---
+# --- CUSTOM CSS FOR MINIMALIST GRID ---
 st.markdown("""
     <style>
     /* Clean up top padding */
@@ -22,50 +22,54 @@ st.markdown("""
     
     /* Round inputs and buttons */
     .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
-        border-radius: 8px !important;
-    }
-    .stButton button {
-        border-radius: 8px !important;
-        font-weight: 600 !important;
+        border-radius: 6px !important;
+        background-color: #1e1e1e !important;
+        border: 1px solid #333 !important;
     }
     
-    /* Fix Checkbox and Toggle Alignment in Table Row */
-    div[data-testid="stCheckbox"] { padding-top: 8px; }
+    /* Force Vertical Center Alignment for Columns */
+    div[data-testid="column"] {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    
+    /* Fix Checkbox and Toggle Alignment */
+    div[data-testid="stCheckbox"] { padding-top: 4px; }
     div[data-testid="stToggle"] { padding-top: 4px; }
     
-    /* Style Table Headers */
+    /* Style Table Headers - Minimalist */
     .table-header {
         font-weight: 600;
         color: #9aa0a6;
-        font-size: 13px;
+        font-size: 12px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         border-bottom: 1px solid #333333;
-        padding-bottom: 8px;
-        margin-bottom: 12px;
+        padding-bottom: 12px;
+        margin-bottom: 8px;
     }
     
     /* Clean text display for successful fetches */
     .success-text {
-        padding-top: 8px;
-        margin-bottom: 4px;
         font-size: 14px;
         color: #e0e0e0;
+        margin-bottom: 2px;
     }
     
     /* SMART RED BORDERS FOR ERRORS */
-    /* Targets any input placeholder containing 'Fix Error' */
     input[placeholder*="Fix Error"] {
         border: 1px solid #ef4444 !important;
         box-shadow: 0 0 0 1px #ef4444 !important;
     }
     
-    /* Subtly elevate the export section */
-    div[data-testid="stVerticalBlock"] > div:last-child {
+    /* Redesigned Export Panel */
+    .export-panel-container {
         background-color: #1a1a1a;
-        padding: 20px;
-        border-radius: 12px;
+        padding: 24px;
+        border-radius: 8px;
         border: 1px solid #333333;
+        margin-top: 20px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -208,7 +212,6 @@ def extract_and_categorize(url):
             
     return {"url": url, "tiny": tinyurl, "headline": headline, "cat": cat}
 
-# CALLBACK: Hard-saves user edits so they never reset
 def update_field(index, field, widget_key):
     st.session_state.processed_items[index][field] = st.session_state[widget_key]
 
@@ -313,16 +316,13 @@ elif app_mode == "Step 2: Process Data":
             with st.spinner(f"Processing {len(urls)} URLs concurrently..."):
                 with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                     processed = list(executor.map(extract_and_categorize, urls))
-                # Save scraped data to master list
                 st.session_state.processed_items = processed
                 
     if "processed_items" in st.session_state and st.session_state.processed_items:
         st.write("")
-        st.subheader("Review & Edit Dashboard")
-        st.write("Ensure all headlines are formatted correctly and categories align with your newsletter layout.")
         
-        # 4-Column Consolidated Layout
-        h_col1, h_col2, h_col3, h_col4 = st.columns([0.7, 0.7, 7.6, 3])
+        # Table Headers - Minimalist
+        h_col1, h_col2, h_col3, h_col4 = st.columns([0.5, 0.5, 7.5, 3.5])
         h_col1.markdown("<div class='table-header'>Keep</div>", unsafe_allow_html=True)
         h_col2.markdown("<div class='table-header'>Edit</div>", unsafe_allow_html=True)
         h_col3.markdown("<div class='table-header'>Extracted News & Links</div>", unsafe_allow_html=True)
@@ -332,36 +332,29 @@ elif app_mode == "Step 2: Process Data":
         
         # Build Interactive Table Rows
         for i, item in enumerate(st.session_state.processed_items):
-            col1, col2, col3, col4 = st.columns([0.7, 0.7, 7.6, 3])
+            # Add a subtle border-bottom to each row by wrapping in a container if needed, 
+            # but Streamlit native columns look best kept simple.
+            col1, col2, col3, col4 = st.columns([0.5, 0.5, 7.5, 3.5])
             
-            # Keep Checkbox
             keep = col1.checkbox("Keep", value=True, key=f"keep_{i}", label_visibility="collapsed")
-            
-            # Edit Toggle
             edit_mode = col2.toggle("Edit", key=f"edit_toggle_{i}", label_visibility="collapsed")
             
-            # Evaluate Error States directly from the master list
             needs_head_fix = "[ACTION REQUIRED]" in item["headline"]
             needs_tiny_fix = "[ACTION REQUIRED]" in item["tiny"]
             
             with col3:
-                # If there is an error, OR the user has toggled Edit Mode ON
                 if needs_head_fix or needs_tiny_fix or edit_mode:
                     st.caption(f"Source: [{item['url'][:80]}...]({item['url']})")
-                    
                     sub1, sub2 = st.columns(2)
                     
-                    # Headline Input (Triggers red border CSS via placeholder if it contains an error)
                     ph_head = "Fix Error: Paste Headline..." if needs_head_fix else "Edit Headline..."
                     head_val = item["headline"] if not needs_head_fix else ""
                     sub1.text_input("Headline", value=head_val, key=f"head_{i}", placeholder=ph_head, label_visibility="collapsed", on_change=update_field, args=(i, "headline", f"head_{i}"))
                     
-                    # Shortlink Input (Triggers red border CSS via placeholder if it contains an error)
                     ph_tiny = "Fix Error: Paste TinyURL..." if needs_tiny_fix else "Edit TinyURL..."
                     tiny_val = item["tiny"] if not needs_tiny_fix else ""
                     sub2.text_input("Shortlink", value=tiny_val, key=f"tiny_{i}", placeholder=ph_tiny, label_visibility="collapsed", on_change=update_field, args=(i, "tiny", f"tiny_{i}"))
                 
-                # If fetch was fully successful and edit mode is OFF
                 else:
                     st.markdown(f"<div class='success-text'><b>{item['headline']}</b></div>", unsafe_allow_html=True)
                     st.caption(f"Source: [{item['url'][:55]}...]({item['url']}) &nbsp;|&nbsp; Shortlink: [{item['tiny']}]({item['tiny']})")
@@ -369,35 +362,43 @@ elif app_mode == "Step 2: Process Data":
             with col4:
                 st.selectbox("Category", options=CATEGORIES, index=CATEGORIES.index(item["cat"]), key=f"cat_{i}", label_visibility="collapsed", on_change=update_field, args=(i, "cat", f"cat_{i}"))
             
-            # Build final list using the dynamically updated master list items
             if keep:
                 final_items.append(item)
                 
-        st.write("")
+            st.divider() # Adds the minimalist border between rows
+                
+        # Export Container - Redesigned
+        st.markdown("<div class='export-panel-container'>", unsafe_allow_html=True)
+        st.markdown("### Generate Final Files")
         
-        # Export Container
-        with st.container():
-            st.markdown("### Generate Final Files")
-            
-            tomorrow_date = datetime.date.today() + datetime.timedelta(days=1)
-            selected_file_date = st.date_input("Rundown Header Date", value=tomorrow_date)
-            date_str = selected_file_date.strftime("%B %d, %Y")
-            
-            f1_content = f"Daily Rundown: {date_str}\n\n"
-            f2_content = f"Daily Rundown: {date_str}\n\n"
-            
-            active_categories = [cat for cat in CATEGORIES if any(x["cat"] == cat for x in final_items)]
-            
-            for idx, c in enumerate(active_categories):
-                group = [x for x in final_items if x["cat"] == c]
-                if group:
-                    f1_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny']}\n" for x in group])
-                    f2_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny']}\n{x['url']}\n" for x in group])
-                    
-                    if idx < len(active_categories) - 1:
-                        f1_content += "\n"
-                        f2_content += "\n"
-            
-            dl_col1, dl_col2, _ = st.columns([3, 3, 4])
-            dl_col1.download_button(label="Download Clean Rundown (.txt)", data=f1_content, file_name=f"Daily Rundown {date_str}.txt", mime="text/plain", type="primary")
-            dl_col2.download_button(label="Download Reference File (.txt)", data=f2_content, file_name=f"Daily Rundown {date_str} - Full.txt", mime="text/plain")
+        ex_col1, ex_col2, ex_col3 = st.columns([2, 2.5, 2.5])
+        
+        tomorrow_date = datetime.date.today() + datetime.timedelta(days=1)
+        selected_file_date = ex_col1.date_input("Rundown Header Date", value=tomorrow_date)
+        date_str = selected_file_date.strftime("%B %d, %Y")
+        
+        f1_content = f"Daily Rundown: {date_str}\n\n"
+        f2_content = f"Daily Rundown: {date_str}\n\n"
+        
+        active_categories = [cat for cat in CATEGORIES if any(x["cat"] == cat for x in final_items)]
+        
+        for idx, c in enumerate(active_categories):
+            group = [x for x in final_items if x["cat"] == c]
+            if group:
+                f1_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny']}\n" for x in group])
+                f2_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny']}\n{x['url']}\n" for x in group])
+                
+                if idx < len(active_categories) - 1:
+                    f1_content += "\n"
+                    f2_content += "\n"
+        
+        # Ensure buttons align vertically with the date input
+        ex_col2.write("")
+        ex_col2.write("")
+        ex_col2.download_button(label="Download Clean Rundown (.txt)", data=f1_content, file_name=f"Daily Rundown {date_str}.txt", mime="text/plain", type="primary", use_container_width=True)
+        
+        ex_col3.write("")
+        ex_col3.write("")
+        ex_col3.download_button(label="Download Reference File (.txt)", data=f2_content, file_name=f"Daily Rundown {date_str} - Full.txt", mime="text/plain", use_container_width=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
