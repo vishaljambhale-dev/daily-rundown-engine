@@ -234,8 +234,11 @@ elif app_mode == "Step 2: Process Data":
             st.warning("Please paste URLs before processing.")
         else:
             urls = [u.strip() for u in raw_urls.split("\n") if u.strip()]
-            with st.spinner(f"Processing {len(urls)} URLs..."):
-                processed = [extract_and_categorize(u) for u in urls]
+            with st.spinner(f"Processing {len(urls)} URLs concurrently..."):
+                # Process all URLs simultaneously using up to 15 parallel threads
+                with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+                    processed = list(executor.map(extract_and_categorize, urls))
+                
                 st.session_state.processed_items = processed
                 
     if "processed_items" in st.session_state and st.session_state.processed_items:
