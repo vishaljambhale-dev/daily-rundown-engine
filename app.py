@@ -27,17 +27,6 @@ st.markdown("""
         border: 1px solid #333 !important;
     }
     
-    /* Force Vertical Center Alignment for Columns */
-    div[data-testid="column"] {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
-    
-    /* Fix Checkbox and Toggle Alignment */
-    div[data-testid="stCheckbox"] { padding-top: 4px; }
-    div[data-testid="stToggle"] { padding-top: 4px; }
-    
     /* Style Table Headers - Minimalist */
     .table-header {
         font-weight: 600;
@@ -321,8 +310,8 @@ elif app_mode == "Step 2: Process Data":
     if "processed_items" in st.session_state and st.session_state.processed_items:
         st.write("")
         
-        # Table Headers - Minimalist
-        h_col1, h_col2, h_col3, h_col4 = st.columns([0.5, 0.5, 7.5, 3.5])
+        # Table Headers - Vertically Aligned to bottom to sit nicely above the data
+        h_col1, h_col2, h_col3, h_col4 = st.columns([0.5, 0.5, 7.5, 3.5], vertical_alignment="bottom")
         h_col1.markdown("<div class='table-header'>Keep</div>", unsafe_allow_html=True)
         h_col2.markdown("<div class='table-header'>Edit</div>", unsafe_allow_html=True)
         h_col3.markdown("<div class='table-header'>Extracted News & Links</div>", unsafe_allow_html=True)
@@ -330,11 +319,9 @@ elif app_mode == "Step 2: Process Data":
         
         final_items = []
         
-        # Build Interactive Table Rows
+        # Build Interactive Table Rows - NATIVE VERTICAL CENTER ALIGNMENT
         for i, item in enumerate(st.session_state.processed_items):
-            # Add a subtle border-bottom to each row by wrapping in a container if needed, 
-            # but Streamlit native columns look best kept simple.
-            col1, col2, col3, col4 = st.columns([0.5, 0.5, 7.5, 3.5])
+            col1, col2, col3, col4 = st.columns([0.5, 0.5, 7.5, 3.5], vertical_alignment="center")
             
             keep = col1.checkbox("Keep", value=True, key=f"keep_{i}", label_visibility="collapsed")
             edit_mode = col2.toggle("Edit", key=f"edit_toggle_{i}", label_visibility="collapsed")
@@ -345,7 +332,8 @@ elif app_mode == "Step 2: Process Data":
             with col3:
                 if needs_head_fix or needs_tiny_fix or edit_mode:
                     st.caption(f"Source: [{item['url'][:80]}...]({item['url']})")
-                    sub1, sub2 = st.columns(2)
+                    # Vertically align the nested input columns too
+                    sub1, sub2 = st.columns(2, vertical_alignment="center")
                     
                     ph_head = "Fix Error: Paste Headline..." if needs_head_fix else "Edit Headline..."
                     head_val = item["headline"] if not needs_head_fix else ""
@@ -365,13 +353,13 @@ elif app_mode == "Step 2: Process Data":
             if keep:
                 final_items.append(item)
                 
-            st.divider() # Adds the minimalist border between rows
+            st.divider()
                 
-        # Export Container - Redesigned
+        # Export Container - Native Bottom Alignment
         st.markdown("<div class='export-panel-container'>", unsafe_allow_html=True)
         st.markdown("### Generate Final Files")
         
-        ex_col1, ex_col2, ex_col3 = st.columns([2, 2.5, 2.5])
+        ex_col1, ex_col2, ex_col3 = st.columns([2, 2.5, 2.5], vertical_alignment="bottom")
         
         tomorrow_date = datetime.date.today() + datetime.timedelta(days=1)
         selected_file_date = ex_col1.date_input("Rundown Header Date", value=tomorrow_date)
@@ -392,13 +380,7 @@ elif app_mode == "Step 2: Process Data":
                     f1_content += "\n"
                     f2_content += "\n"
         
-        # Ensure buttons align vertically with the date input
-        ex_col2.write("")
-        ex_col2.write("")
         ex_col2.download_button(label="Download Clean Rundown (.txt)", data=f1_content, file_name=f"Daily Rundown {date_str}.txt", mime="text/plain", type="primary", use_container_width=True)
-        
-        ex_col3.write("")
-        ex_col3.write("")
         ex_col3.download_button(label="Download Reference File (.txt)", data=f2_content, file_name=f"Daily Rundown {date_str} - Full.txt", mime="text/plain", use_container_width=True)
         
         st.markdown("</div>", unsafe_allow_html=True)
