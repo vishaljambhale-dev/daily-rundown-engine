@@ -20,7 +20,7 @@ st.markdown("""
     /* Clean up top padding */
     .block-container { padding-top: 2rem; }
     
-    /* Round the corners of input fields and buttons */
+    /* Round inputs and buttons */
     .stTextInput input, .stSelectbox div[data-baseweb="select"], .stTextArea textarea {
         border-radius: 8px !important;
     }
@@ -29,11 +29,31 @@ st.markdown("""
         font-weight: 600 !important;
     }
     
-    /* Style the review table headers */
-    div[data-testid="column"] { 
-        border-bottom: 1px solid #333333; 
-        padding-bottom: 5px; 
-        margin-bottom: 10px;
+    /* Fix Checkbox and Toggle Alignment in Table Row */
+    div[data-testid="stCheckbox"] {
+        padding-top: 8px;
+    }
+    div[data-testid="stToggle"] {
+        padding-top: 4px;
+    }
+    
+    /* Style Table Headers */
+    .table-header {
+        font-weight: 600;
+        color: #9aa0a6;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid #333333;
+        padding-bottom: 8px;
+        margin-bottom: 12px;
+    }
+    
+    /* Clean text display for successful fetches */
+    .success-text {
+        padding-top: 8px;
+        font-size: 14px;
+        color: #e0e0e0;
     }
     
     /* Subtly elevate the export section */
@@ -54,7 +74,12 @@ if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"] != "pending":
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 shortener = pyshorteners.Shortener()
-CATEGORIES = ["Economy & Current Affairs", "International", "Company & Industry Specific", "Quarterly Results"]
+CATEGORIES = [
+    "ECONOMY & CURRENT AFFAIRS",
+    "INTERNATIONAL",
+    "INDUSTRY & COMPANY SPECIFIC",
+    "QUARTERLY RESULTS"
+]
 
 # --- COLAB SCRAPER CONFIGURATION ---
 headers = {
@@ -175,7 +200,7 @@ def extract_and_categorize(url):
     if gemini_key and gemini_key != "pending":
         try:
             model = genai.GenerativeModel("gemini-2.5-flash")
-            prompt = f"Categorize into ONE of: Economy & Current Affairs, International, Company & Industry Specific, Quarterly Results. Headline: '{headline}'. Return ONLY category name."
+            prompt = f"Categorize into ONE of: ECONOMY & CURRENT AFFAIRS, INTERNATIONAL, INDUSTRY & COMPANY SPECIFIC, QUARTERLY RESULTS. Headline: '{headline}'. Return ONLY category name."
             cat_response = model.generate_content(prompt).text.strip()
             if cat_response in CATEGORIES:
                 cat = cat_response
@@ -185,8 +210,15 @@ def extract_and_categorize(url):
     return {"url": url, "tiny": tinyurl, "headline": headline, "cat": cat}
 
 # --- SIDEBAR NAVIGATION ---
-st.sidebar.title("Daily Rundown")
-st.sidebar.write("")
+# Custom branded title for the sidebar
+st.sidebar.markdown("""
+    <div style="margin-bottom: 25px; padding-top: 10px;">
+        <h1 style="font-size: 1.9rem; font-weight: 800; margin: 0; color: #e0e0e0; line-height: 1.2;">
+            Daily Rundown<br>
+            <span style="color: #06b6d4;">Engine</span>
+        </h1>
+    </div>
+""", unsafe_allow_html=True)
 
 app_mode = st.sidebar.radio(
     "Navigation",
@@ -312,43 +344,89 @@ elif app_mode == "Step 2: Process Data":
         st.subheader("Review & Edit Dashboard")
         st.write("Ensure all headlines are formatted correctly and categories align with your newsletter layout.")
         
-        h_col1, h_col2, h_col3 = st.columns([1, 6, 4])
-        h_col1.write("**Keep**")
-        h_col2.write("**Extracted Headline**")
-        h_col3.write("**AI Assigned Category**")
+        # Table Headers with Edit Column
+        h_col1, h_col_edit, h_col2, h_col3, h_col4 = st.columns([0.7, 0.7, 4.3, 2.5, 3.5])
+        h_col1.markdown("<div class='table-header'>Keep</div>", unsafe_allow_html=True)
+        h_col_edit.markdown("<div class='table-header'>Edit</div>", unsafe_allow_html=True)
+        h_col2.markdown("<div class='table-header'>Extracted Headline</div>", unsafe_allow_html=True)
+        h_col3.markdown("<div class='table-header'>Shortlink</div>", unsafe_allow_html=True)
+        h_col4.markdown("<div class='table-header'>AI Assigned Category</div>", unsafe_allow_html=True)
         
         final_items = []
         
+        # Interactive Table Rows
         for i, item in enumerate(st.session_state.processed_items):
-            col1, col2, col3 = st.columns([1, 6, 4])
+            col1, col_edit, col2, col3, col4 = st.columns([0.7, 0.7, 4.3, 2.5, 3.5])
+            
             keep = col1.checkbox("Keep", value=True, key=f"keep_{i}", label_visibility="collapsed")
-            headline = col2.text_input("Headline", value=item["headline"], key=f"head_{i}", label_visibility="collapsed")
-            category = col3.selectbox("Category", options=CATEGORIES, index=CATEGORIES.index(item["cat"]), key=f"cat_{i}", label_visibility="collapsed")
+            edit_mode = col_edit.toggle("Edit", key=f"edit_toggle_{i}", label_visibility="collapsed")
+            
+            current_head = st.session_state.get(f"head_{i}", item["headline"])
+            current_tiny = st.session_state.get(f"tiny_{i}", item["tiny"])
+            
+            # --- CONDITIONAL HEADLINE LOGIC ---
+            if "[ACTION REQUIRED]" in current_head or edit_mode:
+                if "[ACTION REQUIRED]" in current_head:
+                    col2.markdown("<span style='color: #ef4444; font-size: 13px; font-weight: 600;'>Manual Headline Needed</span>", unsafe_allow_html=True)
+                    val = ""
+                else:
+                    val = current_head
+                    
+                headline = col2.text_input("Paste Headline", value=val, key=f"head_{i}", label_visibility="collapsed", placeholder="Paste correct headline here...")
+            else:
+                col2.markdown(f"<div class='success-text'><b>{current_head}</b></div>", unsafe_allow_html=True)
+                headline = current_head
+            
+            col2.caption(f"Source: [{item['url'][:65]}...]({item['url']})")
+            
+            # --- CONDITIONAL TINYURL LOGIC ---
+            if "[ACTION REQUIRED]" in current_tiny or edit_mode:
+                if "[ACTION REQUIRED]" in current_tiny:
+                    col3.markdown("<span style='color: #ef4444; font-size: 13px; font-weight: 600;'>Manual Link Needed</span>", unsafe_allow_html=True)
+                    val = ""
+                else:
+                    val = current_tiny
+                    
+                tiny = col3.text_input("Paste Shortlink", value=val, key=f"tiny_{i}", label_visibility="collapsed", placeholder="Paste TinyURL here...")
+            else:
+                col3.markdown(f"<div class='success-text'><a href='{current_tiny}' target='_blank' style='color: #06b6d4;'>{current_tiny}</a></div>", unsafe_allow_html=True)
+                tiny = current_tiny
+                
+            category = col4.selectbox("Category", options=CATEGORIES, index=CATEGORIES.index(item["cat"]), key=f"cat_{i}", label_visibility="collapsed")
             
             if keep:
                 final_items.append({
                     "headline": headline,
                     "category": category,
-                    "tiny_url": item["tiny"],
+                    "tiny_url": tiny,
                     "full_url": item["url"]
                 })
                 
         st.write("")
+        
+        # Export Container
         with st.container():
             st.markdown("### Generate Final Files")
-            date_str = datetime.date.today().strftime("%B %d, %Y")
+            
+            tomorrow_date = datetime.date.today() + datetime.timedelta(days=1)
+            selected_file_date = st.date_input("Rundown Header Date", value=tomorrow_date)
+            date_str = selected_file_date.strftime("%B %d, %Y")
             
             f1_content = f"Daily Rundown: {date_str}\n\n"
-            f2_content = f"Daily Rundown (Reference): {date_str}\n\n"
+            f2_content = f"Daily Rundown: {date_str}\n\n"
             
             active_categories = [cat for cat in CATEGORIES if any(x["category"] == cat for x in final_items)]
             
-            for c in active_categories:
+            for idx, c in enumerate(active_categories):
                 group = [x for x in final_items if x["category"] == c]
                 if group:
-                    f1_content += f"{c.upper()}\n" + "".join([f"{x['headline']}\n{x['tiny_url']}\n" for x in group]) + "\n"
-                    f2_content += f"{c.upper()}\n" + "".join([f"{x['headline']}\n{x['tiny_url']}\n{x['full_url']}\n" for x in group]) + "\n"
+                    f1_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny_url']}\n" for x in group])
+                    f2_content += f"{c}\n" + "".join([f"{x['headline']}\n{x['tiny_url']}\n{x['full_url']}\n" for x in group])
+                    
+                    if idx < len(active_categories) - 1:
+                        f1_content += "\n"
+                        f2_content += "\n"
             
             dl_col1, dl_col2, _ = st.columns([3, 3, 4])
-            dl_col1.download_button(label="Download Clean Rundown (.txt)", data=f1_content, file_name=f"Daily_Rundown_{date_str}.txt", mime="text/plain", type="primary")
-            dl_col2.download_button(label="Download Reference File (.txt)", data=f2_content, file_name=f"Daily_Rundown_Ref_{date_str}.txt", mime="text/plain")
+            dl_col1.download_button(label="Download Clean Rundown (.txt)", data=f1_content, file_name=f"Daily Rundown {date_str}.txt", mime="text/plain", type="primary")
+            dl_col2.download_button(label="Download Reference File (.txt)", data=f2_content, file_name=f"Daily Rundown {date_str} - Full.txt", mime="text/plain")
