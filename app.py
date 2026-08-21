@@ -212,11 +212,9 @@ if app_mode == "Step 1: Fetch Posts":
                 st.write("### Batch Search URLs for Chrome Extension")
                 st.write("Hover over the box below, click the **Copy icon** in the top right corner, paste into your **Open Multiple URLs** extension, and hit **Open URLs**:")
                 
-                # Generate full Google Search URLs line-by-line
                 search_urls = [f"https://www.google.com/search?q={urllib.parse.quote(q[:120])}" for q in selected_queries]
                 urls_formatted = "\n".join(search_urls)
                 
-                # Display inside a Streamlit code block with a native copy button
                 st.code(urls_formatted, language="text")
                 
                 st.write("Or click individually if needed:")
