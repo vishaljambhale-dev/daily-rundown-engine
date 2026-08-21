@@ -149,7 +149,6 @@ if app_mode == "Step 1: Fetch Posts":
     st.write("") # Spacer
     
     if fetch_type == "One Day":
-        # Layout: 1 Date Field, 2 Time Fields
         col_date, _ = st.columns([1, 1])
         selected_date = col_date.date_input("Select Date", value=today_date)
         
@@ -161,7 +160,6 @@ if app_mode == "Step 1: Fetch Posts":
         end_dt_ist = datetime.datetime.combine(selected_date, end_t)
         
     else:
-        # Layout: 2 Date Fields, 2 Time Fields
         col_sd, col_ed = st.columns(2)
         start_d = col_sd.date_input("Start Date", value=today_date - datetime.timedelta(days=2))
         end_d = col_ed.date_input("End Date", value=today_date)
@@ -187,7 +185,6 @@ if app_mode == "Step 1: Fetch Posts":
         else:
             with st.spinner("Connecting to Telegram & Fetching Messages..."):
                 try:
-                    # Pass the calculated UTC boundaries to the fetch function
                     posts_data = asyncio.run(fetch_telegram_posts(start_time_utc, end_time_utc))
                     st.session_state.posts = posts_data
                     st.success(f"Successfully fetched {len(posts_data)} posts for the selected window.")
@@ -202,17 +199,30 @@ if app_mode == "Step 1: Fetch Posts":
             post_text = post_obj["text"]
             formatted_time = post_obj["date"].strftime("%b %d, %I:%M %p")
             
-            if st.checkbox(f"[{formatted_time}] {post_text[:140]}...", key=f"post_{i}"):
+            # Display FULL text cleanly formatted with a bold timestamp (no truncation)
+            label = f"**[{formatted_time}]** {post_text}"
+            if st.checkbox(label, key=f"post_{i}"):
                 selected_queries.append(post_text)
                 
         if st.button("Generate Search Links", type="primary"):
             if not selected_queries:
                 st.warning("Please check at least one post.")
             else:
-                st.write("Click to open searches in new tabs:")
-                for q in selected_queries:
-                    search_url = f"https://www.google.com/search?q={urllib.parse.quote(q[:120])}"
-                    st.markdown(f"- [Search: {q[:60]}...]({search_url})", unsafe_allow_html=True)
+                st.divider()
+                st.write("### Batch Search URLs for Chrome Extension")
+                st.write("Hover over the box below, click the **Copy icon** in the top right corner, paste into your **Open Multiple URLs** extension, and hit **Open URLs**:")
+                
+                # Generate full Google Search URLs line-by-line
+                search_urls = [f"https://www.google.com/search?q={urllib.parse.quote(q[:120])}" for q in selected_queries]
+                urls_formatted = "\n".join(search_urls)
+                
+                # Display inside a Streamlit code block with a native copy button
+                st.code(urls_formatted, language="text")
+                
+                st.write("Or click individually if needed:")
+                for q, url in zip(selected_queries, search_urls):
+                    st.markdown(f"- [Search: {q[:80]}...]({url})", unsafe_allow_html=True)
+                    
 # --- MAIN AREA: STEP 2 ---
 elif app_mode == "Step 2: Process Data":
     st.header("Step 2: Process & Export Data")
