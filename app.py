@@ -5,6 +5,7 @@ import urllib.parse
 import requests
 import bs4
 import pyshorteners
+import concurrent.futures
 import google.generativeai as genai
 from telethon import TelegramClient
 
