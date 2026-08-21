@@ -133,22 +133,77 @@ if app_mode == "Step 1: Fetch Posts":
     st.header("Step 1: Fetch Telegram Posts")
     st.write("Extract recent updates from the designated source channel.")
     
+    # --- DYNAMIC TIME RANGE SELECTOR ---
+    st.subheader("Fetch Parameters")
+    
+    fetch_type = st.radio(
+        "Select Fetch Duration", 
+        ["One Day", "Multi Day"], 
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    
+    now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
+    today_date = now_ist.date()
+    
+    st.write("") # Spacer
+    
+    if fetch_type == "One Day":
+        # Layout: 1 Date Field, 2 Time Fields
+        col_date, _ = st.columns([1, 1])
+        selected_date = col_date.date_input("Select Date", value=today_date)
+        
+        col_st, col_et = st.columns(2)
+        start_t = col_st.time_input("Start Time (IST)", value=datetime.time(12, 0))
+        end_t = col_et.time_input("End Time (IST)", value=datetime.time(22, 0))
+        
+        start_dt_ist = datetime.datetime.combine(selected_date, start_t)
+        end_dt_ist = datetime.datetime.combine(selected_date, end_t)
+        
+    else:
+        # Layout: 2 Date Fields, 2 Time Fields
+        col_sd, col_ed = st.columns(2)
+        start_d = col_sd.date_input("Start Date", value=today_date - datetime.timedelta(days=2))
+        end_d = col_ed.date_input("End Date", value=today_date)
+        
+        col_st, col_et = st.columns(2)
+        start_t = col_st.time_input("Start Time on Start Date (IST)", value=datetime.time(22, 0))
+        end_t = col_et.time_input("End Time on End Date (IST)", value=datetime.time(12, 0))
+        
+        start_dt_ist = datetime.datetime.combine(start_d, start_t)
+        end_dt_ist = datetime.datetime.combine(end_d, end_t)
+
+    # Convert local IST boundary to UTC for Telegram API
+    ist_offset = datetime.timedelta(hours=5, minutes=30)
+    start_time_utc = start_dt_ist.replace(tzinfo=datetime.timezone.utc) - ist_offset
+    end_time_utc = end_dt_ist.replace(tzinfo=datetime.timezone.utc) - ist_offset
+
+    st.divider()
+
+    # --- FETCH LOGIC ---
     if fetch_clicked:
-        with st.spinner("Connecting to Telegram..."):
-            try:
-                posts = asyncio.run(fetch_telegram_posts())
-                st.session_state.posts = posts
-                st.success(f"Successfully fetched {len(posts)} posts.")
-            except Exception as e:
-                st.error(f"Error fetching posts: {e}")
+        if start_time_utc >= end_time_utc:
+            st.error("Error: Start time must be strictly before End time.")
+        else:
+            with st.spinner("Connecting to Telegram & Fetching Messages..."):
+                try:
+                    # Pass the calculated UTC boundaries to the fetch function
+                    posts_data = asyncio.run(fetch_telegram_posts(start_time_utc, end_time_utc))
+                    st.session_state.posts = posts_data
+                    st.success(f"Successfully fetched {len(posts_data)} posts for the selected window.")
+                except Exception as e:
+                    st.error(f"Error fetching posts: {e}")
                 
     if "posts" in st.session_state and st.session_state.posts:
-        st.write("Select relevant posts to generate search queries:")
+        st.write("### Select relevant posts to generate search queries:")
         
         selected_queries = []
-        for i, post in enumerate(st.session_state.posts):
-            if st.checkbox(post[:150] + "...", key=f"post_{i}"):
-                selected_queries.append(post)
+        for i, post_obj in enumerate(st.session_state.posts):
+            post_text = post_obj["text"]
+            formatted_time = post_obj["date"].strftime("%b %d, %I:%M %p")
+            
+            if st.checkbox(f"[{formatted_time}] {post_text[:140]}...", key=f"post_{i}"):
+                selected_queries.append(post_text)
                 
         if st.button("Generate Search Links", type="primary"):
             if not selected_queries:
@@ -158,7 +213,6 @@ if app_mode == "Step 1: Fetch Posts":
                 for q in selected_queries:
                     search_url = f"https://www.google.com/search?q={urllib.parse.quote(q[:120])}"
                     st.markdown(f"- [Search: {q[:60]}...]({search_url})", unsafe_allow_html=True)
-
 # --- MAIN AREA: STEP 2 ---
 elif app_mode == "Step 2: Process Data":
     st.header("Step 2: Process & Export Data")
