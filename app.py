@@ -55,25 +55,25 @@ CATEGORIES = ["Economy & Current Affairs", "International", "Company & Industry 
 # --- HELPER FUNCTIONS ---
 from telethon.sessions import StringSession
 
-async def fetch_telegram_posts():
-    # Uses the StringSession stored in Streamlit Secrets
+async def fetch_telegram_posts(start_time, end_time):
     session_str = st.secrets["TELEGRAM_STRING_SESSION"]
     client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
     
     await client.start()
     
-    today = datetime.datetime.now(datetime.timezone.utc).date()
-    # Filters posts between 12:00 PM IST (06:30 UTC) and 10:00 PM IST (16:30 UTC)
-    start_time = datetime.datetime.combine(today, datetime.time(6, 30), tzinfo=datetime.timezone.utc)
-    end_time = datetime.datetime.combine(today, datetime.time(16, 30), tzinfo=datetime.timezone.utc)
-    
     posts = []
-    async for m in client.iter_messages(CHANNEL, limit=100):
+    # Iterates over recent messages in the target channel
+    async for m in client.iter_messages(CHANNEL, limit=250):
+        # We check if m.date exists, falls within the requested UTC window, and has actual text
         if m.date and start_time <= m.date <= end_time and m.text and len(m.text.strip()) > 10:
-            posts.append(m.text.replace("\n", " ").strip())
-    
+            posts.append({
+                "text": m.text.replace("\n", " ").strip(),
+                "date": m.date.astimezone(datetime.timezone(datetime.timedelta(hours=5, minutes=30)))
+            })
+            
     await client.disconnect()
     return posts
+
 
 def extract_and_categorize(url):
     try:
