@@ -5,9 +5,11 @@ import urllib.parse
 import requests
 import bs4
 import pyshorteners
-import concurrent.futures
 import google.generativeai as genai
 from telethon import TelegramClient
+from telethon.sessions import StringSession
+import concurrent.futures
+import time
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Daily Rundown Engine", layout="wide")
@@ -48,14 +50,43 @@ st.markdown("""
 API_ID = st.secrets["TELEGRAM_API_ID"]
 API_HASH = st.secrets["TELEGRAM_API_HASH"]
 CHANNEL = st.secrets["CHANNEL_NAME"]
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"] != "pending":
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 shortener = pyshorteners.Shortener()
 CATEGORIES = ["Economy & Current Affairs", "International", "Company & Industry Specific", "Quarterly Results"]
 
-# --- HELPER FUNCTIONS ---
-from telethon.sessions import StringSession
+# --- COLAB SCRAPER CONFIGURATION ---
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Referer': 'https://www.google.com/'
+}
 
+blocked_flags = [
+    "bloomberg", "reuters.com", "reuters", "are you a robot",
+    "attention required", "403 forbidden", "access denied",
+    "just a moment", "cloudflare", "the new york times",
+    "nytimes", "subscribe to read", "log in",
+    "please check", "enable javascript", "security check",
+    "unusual activity", "browser settings", "verify you are human",
+    "page not found", "404 not found", "error 404"
+]
+
+suffixes_to_remove = [
+    " - report: moneycontrol.com", " - moneycontrol.com", " | moneycontrol.com",
+    " - moneycontrol", " | moneycontrol", " - cnbctv18", " | cnbctv18",
+    " - cnbc tv18", " | cnbc tv18", " - the economic times", " | the economic times",
+    " - ndtv profit", " | ndtv profit", " - livemint", " | livemint",
+    " - business standard", " | business standard"
+]
+
+garbage_brands = [
+    "moneycontrol", "cnbctv18", "economic times",
+    "livemint", "ndtv", "business standard"
+]
+
+# --- HELPER FUNCTIONS ---
 async def fetch_telegram_posts(start_time, end_time):
     session_str = st.secrets["TELEGRAM_STRING_SESSION"]
     client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
@@ -63,9 +94,7 @@ async def fetch_telegram_posts(start_time, end_time):
     await client.start()
     
     posts = []
-    # Iterates over recent messages in the target channel
     async for m in client.iter_messages(CHANNEL, limit=250):
-        # We check if m.date exists, falls within the requested UTC window, and has actual text
         if m.date and start_time <= m.date <= end_time and m.text and len(m.text.strip()) > 10:
             posts.append({
                 "text": m.text.replace("\n", " ").strip(),
@@ -75,42 +104,90 @@ async def fetch_telegram_posts(start_time, end_time):
     await client.disconnect()
     return posts
 
-
 def extract_and_categorize(url):
-    try:
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-        soup = bs4.BeautifulSoup(resp.text, "html.parser")
-        og = soup.find("meta", property="og:title")
-        if og and og.get("content"):
-            headline = og["content"].strip()
-        elif soup.title:
-            headline = soup.title.string.strip()
-        else:
-            headline = "Manual Headline Needed"
-    except Exception:
-        headline = "Manual Headline Needed"
+    headline = ""
+    tinyurl = ""
     
     try:
-        tiny = shortener.tinyurl.short(url)
-    except Exception:
-        tiny = url
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = bs4.BeautifulSoup(response.content, 'html.parser')
+
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            headline = og_title["content"].strip()
+        elif soup.h1:
+            headline = soup.h1.get_text(strip=True)
+        elif soup.title:
+            headline = soup.title.get_text(strip=True)
+
+        if headline:
+            headline = headline.replace('\xa0', ' ').strip()
+            headline_lower = headline.lower()
+
+            for suffix in suffixes_to_remove:
+                if headline_lower.endswith(suffix):
+                    headline = headline[:-len(suffix)].strip()
+                    headline_lower = headline.lower()
+
+            delimiters = [" | ", " - ", " — ", " – ", " :: ", " |"]
+            for delim in delimiters:
+                if delim in headline:
+                    parts = headline.rsplit(delim, 1)
+                    tail_text = parts[1].strip()
+                    tail_lower = tail_text.lower()
+
+                    is_garbage = (len(tail_text.split()) <= 3) or any(brand in tail_lower for brand in garbage_brands)
+                    if is_garbage:
+                        headline = parts[0].strip()
+
+        is_blocked = False
+        if not headline or len(headline.split()) < 4:
+            is_blocked = True
+        else:
+            for flag in blocked_flags:
+                if flag in headline.lower():
+                    is_blocked = True
+                    break
         
-    try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        prompt = f"Categorize into ONE of: Economy & Current Affairs, International, Company & Industry Specific, Quarterly Results. Headline: '{headline}'. Return ONLY category name."
-        cat = model.generate_content(prompt).text.strip()
-        if cat not in CATEGORIES:
-            cat = CATEGORIES[0]
+        if is_blocked:
+            headline = "[ACTION REQUIRED] Manual Headline Needed"
+
     except Exception:
-        cat = CATEGORIES[0]
-        
-    return {"url": url, "tiny": tiny, "headline": headline, "cat": cat}
+        headline = "[ACTION REQUIRED] Manual Headline Needed"
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                time.sleep(2 ** attempt)
+            tinyurl = shortener.tinyurl.short(url)
+            if tinyurl:
+                break
+        except Exception:
+            pass
+            
+    if not tinyurl:
+        tinyurl = "[ACTION REQUIRED] Manual Shortlink Needed"
+
+    cat = CATEGORIES[0]
+    gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+    
+    if gemini_key and gemini_key != "pending":
+        try:
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            prompt = f"Categorize into ONE of: Economy & Current Affairs, International, Company & Industry Specific, Quarterly Results. Headline: '{headline}'. Return ONLY category name."
+            cat_response = model.generate_content(prompt).text.strip()
+            if cat_response in CATEGORIES:
+                cat = cat_response
+        except Exception:
+            pass
+            
+    return {"url": url, "tiny": tinyurl, "headline": headline, "cat": cat}
 
 # --- SIDEBAR NAVIGATION ---
 st.sidebar.title("Daily Rundown")
-st.sidebar.write("") # Spacer
+st.sidebar.write("")
 
-# Navigation Radio Buttons
 app_mode = st.sidebar.radio(
     "Navigation",
     ["Step 1: Fetch Posts", "Step 2: Process Data"],
@@ -120,21 +197,18 @@ app_mode = st.sidebar.radio(
 st.sidebar.divider()
 st.sidebar.subheader("Actions")
 
-# Dynamically change sidebar actions based on the active view
 fetch_clicked = False
 if app_mode == "Step 1: Fetch Posts":
-    st.sidebar.write("Click below to fetch today's data.")
+    st.sidebar.write("Click below to fetch data based on your parameters.")
     fetch_clicked = st.sidebar.button("Fetch Telegram Data", type="primary", use_container_width=True)
 elif app_mode == "Step 2: Process Data":
     st.sidebar.write("Paste your links in the main window to begin data processing.")
-    # Fetch button is removed here to keep the UI clean
 
 # --- MAIN AREA: STEP 1 ---
 if app_mode == "Step 1: Fetch Posts":
     st.header("Step 1: Fetch Telegram Posts")
     st.write("Extract recent updates from the designated source channel.")
     
-    # --- DYNAMIC TIME RANGE SELECTOR ---
     st.subheader("Fetch Parameters")
     
     fetch_type = st.radio(
@@ -147,7 +221,7 @@ if app_mode == "Step 1: Fetch Posts":
     now_ist = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
     today_date = now_ist.date()
     
-    st.write("") # Spacer
+    st.write("")
     
     if fetch_type == "One Day":
         col_date, _ = st.columns([1, 1])
@@ -172,14 +246,12 @@ if app_mode == "Step 1: Fetch Posts":
         start_dt_ist = datetime.datetime.combine(start_d, start_t)
         end_dt_ist = datetime.datetime.combine(end_d, end_t)
 
-    # Convert local IST boundary to UTC for Telegram API
     ist_offset = datetime.timedelta(hours=5, minutes=30)
     start_time_utc = start_dt_ist.replace(tzinfo=datetime.timezone.utc) - ist_offset
     end_time_utc = end_dt_ist.replace(tzinfo=datetime.timezone.utc) - ist_offset
 
     st.divider()
 
-    # --- FETCH LOGIC ---
     if fetch_clicked:
         if start_time_utc >= end_time_utc:
             st.error("Error: Start time must be strictly before End time.")
@@ -200,7 +272,6 @@ if app_mode == "Step 1: Fetch Posts":
             post_text = post_obj["text"]
             formatted_time = post_obj["date"].strftime("%b %d, %I:%M %p")
             
-            # Display FULL text cleanly formatted with a bold timestamp (no truncation)
             label = f"**[{formatted_time}]** {post_text}"
             if st.checkbox(label, key=f"post_{i}"):
                 selected_queries.append(post_text)
@@ -217,11 +288,7 @@ if app_mode == "Step 1: Fetch Posts":
                 urls_formatted = "\n".join(search_urls)
                 
                 st.code(urls_formatted, language="text")
-                
-                st.write("Or click individually if needed:")
-                for q, url in zip(selected_queries, search_urls):
-                    st.markdown(f"- [Search: {q[:80]}...]({url})", unsafe_allow_html=True)
-                    
+
 # --- MAIN AREA: STEP 2 ---
 elif app_mode == "Step 2: Process Data":
     st.header("Step 2: Process & Export Data")
@@ -235,8 +302,7 @@ elif app_mode == "Step 2: Process Data":
         else:
             urls = [u.strip() for u in raw_urls.split("\n") if u.strip()]
             with st.spinner(f"Processing {len(urls)} URLs concurrently..."):
-                # Process all URLs simultaneously using up to 15 parallel threads
-                with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                     processed = list(executor.map(extract_and_categorize, urls))
                 
                 st.session_state.processed_items = processed
@@ -246,7 +312,6 @@ elif app_mode == "Step 2: Process Data":
         st.subheader("Review & Edit Dashboard")
         st.write("Ensure all headlines are formatted correctly and categories align with your newsletter layout.")
         
-        # Table Headers aligned using columns
         h_col1, h_col2, h_col3 = st.columns([1, 6, 4])
         h_col1.write("**Keep**")
         h_col2.write("**Extracted Headline**")
@@ -254,7 +319,6 @@ elif app_mode == "Step 2: Process Data":
         
         final_items = []
         
-        # Interactive Table Rows
         for i, item in enumerate(st.session_state.processed_items):
             col1, col2, col3 = st.columns([1, 6, 4])
             keep = col1.checkbox("Keep", value=True, key=f"keep_{i}", label_visibility="collapsed")
@@ -269,20 +333,21 @@ elif app_mode == "Step 2: Process Data":
                     "full_url": item["url"]
                 })
                 
-        # Export Container
         st.write("")
         with st.container():
             st.markdown("### Generate Final Files")
-            date_str = datetime.date.today().strftime("%Y-%m-%d")
+            date_str = datetime.date.today().strftime("%B %d, %Y")
             
-            f1_content = f"--- DAILY RUNDOWN ({date_str}) ---\n\n"
-            f2_content = f"--- REFERENCE FILE ({date_str}) ---\n\n"
+            f1_content = f"Daily Rundown: {date_str}\n\n"
+            f2_content = f"Daily Rundown (Reference): {date_str}\n\n"
             
-            for c in CATEGORIES:
+            active_categories = [cat for cat in CATEGORIES if any(x["category"] == cat for x in final_items)]
+            
+            for c in active_categories:
                 group = [x for x in final_items if x["category"] == c]
                 if group:
-                    f1_content += f"=== {c.upper()} ===\n" + "".join([f"• {x['headline']} - {x['tiny_url']}\n" for x in group]) + "\n"
-                    f2_content += f"=== {c.upper()} ===\n" + "".join([f"• {x['headline']}\n  TinyURL: {x['tiny_url']}\n  Full: {x['full_url']}\n\n" for x in group])
+                    f1_content += f"{c.upper()}\n" + "".join([f"{x['headline']}\n{x['tiny_url']}\n" for x in group]) + "\n"
+                    f2_content += f"{c.upper()}\n" + "".join([f"{x['headline']}\n{x['tiny_url']}\n{x['full_url']}\n" for x in group]) + "\n"
             
             dl_col1, dl_col2, _ = st.columns([3, 3, 4])
             dl_col1.download_button(label="Download Clean Rundown (.txt)", data=f1_content, file_name=f"Daily_Rundown_{date_str}.txt", mime="text/plain", type="primary")
